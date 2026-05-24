@@ -28,10 +28,11 @@ def checkRootPriv():
 
 def createReportFile():
     dateObj   = datetime.datetime.now()
-    dateStamp = dateObj.strftime('%x')
-    timeStamp = dateObj.strftime('%X')
+    dateStamp = dateObj.strftime('%m-%d-%Y')
+    timeStamp = dateObj.strftime('%H-%M-%S')
 
-    fileName = f'AutoNetworkScanner_Report_{dateStamp}_{dateTime}.txt'
+    fileName = f'AutoNetworkScanner_Report_{dateStamp}_{timeStamp}.txt'
+    print(f'File Name: {fileName}')
 
     try:
         reportFile = open(fileName, "x")
@@ -59,9 +60,10 @@ def getGatewayAddresses(defaultGateway):
     interfaceAddresses = netifaces.ifaddresses(defaultGateway)[netifaces.AF_INET][0]
 
     localIp    = interfaceAddresses['addr']
-f'Unexpected    subnetMask = interfaceAddresses['netmask']
+    subnetMask = interfaceAddresses['netmask']
+    broadcast  = interfaceAddresses['broadcast']
 
-    return localIp, subnetMask
+    return localIp, subnetMask, broadcast
 # End of getGatewayAddress(defaultGateway)
 
 def calculateNetwork(localIp, subnetMask):
@@ -79,9 +81,11 @@ if not checkRootPriv():
 
 defaultGateway = getDefaultGatewayInterface()
 print(f'Default Gateway : {defaultGateway}')
-localIp, subnetMask = getGatewayAddresses(defaultGateway)
+
+localIp, subnetMask, broadcast = getGatewayAddresses(defaultGateway)
 print(f'Local IP Address : {localIp}')
 print(f'Subnet Mask : {subnetMask}')
+print(f'Broadcast Address: {broadcast}')
 
 network = calculateNetwork(localIp, subnetMask)
 print(f'Network : {network}')
@@ -94,10 +98,21 @@ except nmap.PortScannerError:
 except:
     sys.exit(f'Unexpected Error Occured: {sys.exc_info()[0]}')
 
+reportFile = createReportFile()
+
+with open(reportFile, "a") as file:
+    file.write(f"SCANNING DEVICE'S IP ADDRESS   : {localIp}\n")
+    file.write(f"DEFAULT GATEWAY                : {defaultGateway}\n")
+    file.write(f"NETWORK ADDRESS                : {network}\n")
+    file.write(f"SUBNET MASK                    : {subnetMask}\n")
+    file.write(f"BROADCAST ADDRESS              : {broadcast}\n")
+
 # Scan for live hosts
 nm.scan(hosts=network, arguments='-sn -PR')
 
 liveHosts = nm.all_hosts()
+count = 1
 
 for host in liveHosts:
-    print(f'Host : {host}')
+    print(f'Host {count}: {host}')
+    count+=1
