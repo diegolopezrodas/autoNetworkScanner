@@ -1,13 +1,17 @@
 '''
     CREATED BY : DIEGO LOPEZ-RODAS
     CREATED ON : 05/15/2026
-    UPDATED ON : 05/21/2026
+    UPDATED ON : 05/24/2026
     PURPOSE    : Scan open ports and devices in user's current network using python_nmap module.
                  After scanning is complete, script will generate a report into a csv file.
 '''
 
 
 # Importing modules
+import sys
+import os
+import ctypes 
+import datetime
 import netifaces
 import ipaddress
 import nmap
@@ -15,9 +19,31 @@ import nmap
 
 # Defining Methods
 
+def checkRootPriv():
+    if sys.platform == 'win32':
+        return ctypes.windll.shell32.IsUserAnAdmin()
+    else:
+        return os.geteuid() == 0
+# End of checkRootPriv()
+
+def createReportFile():
+    dateObj   = datetime.datetime.now()
+    dateStamp = dateObj.strftime('%x')
+    timeStamp = dateObj.strftime('%X')
+
+    fileName = f'AutoNetworkScanner_Report_{dateStamp}_{dateTime}.txt'
+
+    try:
+        reportFile = open(fileName, "x")
+    except:
+        sys.exit(f'Unexpected Error - {sys.exc_info()[0]}')
+
+    return fileName
+# End of createReportFile()
+
 def getDefaultGatewayInterface():
     # Using gateways() to obtain dictionary that holds all gateways user's devices is connected to
-    # ['default'] is added to filter dictionary to only hold default gateway user's device use to communicate outside its network
+    # ['default'] is added to filter dictionary to only hold default gateway user's device uses to reach outside its network
     # [netifaces.AF_INET] is added to filter dictionary further to hold only IPv4 addresses
     # [1] is added to filter dictionary further to only hold interface value, NOT its assigned IPv4 address 
     defaultGateway = netifaces.gateways()['default'][netifaces.AF_INET][1]
@@ -33,7 +59,7 @@ def getGatewayAddresses(defaultGateway):
     interfaceAddresses = netifaces.ifaddresses(defaultGateway)[netifaces.AF_INET][0]
 
     localIp    = interfaceAddresses['addr']
-    subnetMask = interfaceAddresses['netmask']
+f'Unexpected    subnetMask = interfaceAddresses['netmask']
 
     return localIp, subnetMask
 # End of getGatewayAddress(defaultGateway)
@@ -43,14 +69,16 @@ def calculateNetwork(localIp, subnetMask):
     # Agrument strict is set to false, to accept an interface address (the device's local IP address within the network)
     network = ipaddress.ip_network(f'{localIp}/{subnetMask}', strict = False)
 
-    return network
+    return str(network)
 # End of calculateNetworkRange
 
 # Main Method
 
+if not checkRootPriv():
+    sys.exit('Please run program with adminstrator/sudo privileges')
+
 defaultGateway = getDefaultGatewayInterface()
 print(f'Default Gateway : {defaultGateway}')
-
 localIp, subnetMask = getGatewayAddresses(defaultGateway)
 print(f'Local IP Address : {localIp}')
 print(f'Subnet Mask : {subnetMask}')
@@ -58,3 +86,18 @@ print(f'Subnet Mask : {subnetMask}')
 network = calculateNetwork(localIp, subnetMask)
 print(f'Network : {network}')
 
+
+try:
+    nm = nmap.PortScanner()
+except nmap.PortScannerError:
+    sys.exit(f'Error Occured: Nmap not found - {sys.exc_info()[0]}')
+except:
+    sys.exit(f'Unexpected Error Occured: {sys.exc_info()[0]}')
+
+# Scan for live hosts
+nm.scan(hosts=network, arguments='-sn -PR')
+
+liveHosts = nm.all_hosts()
+
+for host in liveHosts:
+    print(f'Host : {host}')
