@@ -1,16 +1,17 @@
 '''
     CREATED BY : DIEGO LOPEZ-RODAS
     CREATED ON : 05/15/2026
-    UPDATED ON : 05/24/2026
+    UPDATED ON : 05/26/2026
     PURPOSE    : Scan open ports and devices in user's current network using python_nmap module.
                  After scanning is complete, script will generate a report into a csv file.
 '''
 
 
 # Importing modules
+
 import sys
 import os
-import ctypes 
+import ctypes
 import datetime
 import netifaces
 import ipaddress
@@ -20,27 +21,45 @@ import nmap
 # Defining Methods
 
 def checkRootPriv():
+    # sys.platform returns a string of the OS platform for which Python is compiled on
+    # If it results in 'win32' then it is Windows  
     if sys.platform == 'win32':
+        # Using ctypes to connect Python with Windows Shell to check if script has script admin privileges
         return ctypes.windll.shell32.IsUserAnAdmin()
+    # if it does not result in 'win32' it is either 'darwin' or 'linux'
     else:
+        # macOS and Linux are easier to determine if script is running with root privileges
+        # root's User ID is always 0, and using geteuid() to acquire UID and compare with 0  
         return os.geteuid() == 0
 # End of checkRootPriv()
 
 def createReportFile():
+    # Creating a datetime object and extracting the Date (MM-DD-YYYY) and Time (HH-MM-SS) for when objected created
     dateObj   = datetime.datetime.now()
     dateStamp = dateObj.strftime('%m-%d-%Y')
     timeStamp = dateObj.strftime('%H-%M-%S')
 
+    # Creating the report file using the dateStamp and timeStamp values to ensure unique name
     fileName = f'AutoNetworkScanner_Report_{dateStamp}_{timeStamp}.txt'
-    print(f'File Name: {fileName}')
 
     try:
         reportFile = open(fileName, "x")
     except:
         sys.exit(f'Unexpected Error - {sys.exc_info()[0]}')
 
+    # Return the name of the file to be opened in the main method
     return fileName
 # End of createReportFile()
+
+def writeInterfaceConfiguration(reportFile, configs):
+    with open(reportFile, "a") as file:
+        file.write( "====== Interface Configurations ======\n")
+        file.write(f" HOST IP ADDRESS    : {configs['HOST IP ADDRESS']}\n")
+        file.write(f" DEFAULT GATEWAY    : {configs['DEFAULT GATEWAY']}\n")
+        file.write(f" NETWORK ADDRESS    : {configs['NETWORK ADDRESS']}\n")
+        file.write(f" SUBNET MASK        : {configs['SUBNET MASK']}\n")
+        file.write(f" BROADCAST ADDRESS  : {configs['BROADCAST ADDRESS']}\n\n")
+# End of writeInterfaceConfiguration(reportFile, configs)
 
 def getDefaultGatewayInterface():
     # Using gateways() to obtain dictionary that holds all gateways user's devices is connected to
@@ -74,23 +93,26 @@ def calculateNetwork(localIp, subnetMask):
     return str(network)
 # End of calculateNetworkRange
 
+
 # Main Method
 
 if not checkRootPriv():
     sys.exit('Please run program with adminstrator/sudo privileges')
 
-defaultGateway = getDefaultGatewayInterface()
-print(f'Default Gateway : {defaultGateway}')
-
+# Acquiring all addresses to be logged in the report
+defaultGateway                 = getDefaultGatewayInterface()
 localIp, subnetMask, broadcast = getGatewayAddresses(defaultGateway)
-print(f'Local IP Address : {localIp}')
-print(f'Subnet Mask : {subnetMask}')
-print(f'Broadcast Address: {broadcast}')
+network                        = calculateNetwork(localIp, subnetMask)
 
-network = calculateNetwork(localIp, subnetMask)
-print(f'Network : {network}')
+configs = {
+    'HOST IP ADDRESS'   : localIp,
+    'DEFAULT GATEWAY'   : defaultGateway,
+    'NETWORK ADDRESS'   : network,
+    'SUBNET MASK'       : subnetMask,
+    'BROADCAST ADDRESS' : broadcast
+}
 
-
+# Creating PortScanner object to use Nmap currently on the user's machine
 try:
     nm = nmap.PortScanner()
 except nmap.PortScannerError:
@@ -98,21 +120,24 @@ except nmap.PortScannerError:
 except:
     sys.exit(f'Unexpected Error Occured: {sys.exc_info()[0]}')
 
+# Creating file to be used
 reportFile = createReportFile()
 
+writeInterfaceConfiguration(reportFile, configs)
+
+# Opening the report file and writing to then scan and write all hosts and corresponding IP addresses 
 with open(reportFile, "a") as file:
-    file.write(f"SCANNING DEVICE'S IP ADDRESS   : {localIp}\n")
-    file.write(f"DEFAULT GATEWAY                : {defaultGateway}\n")
-    file.write(f"NETWORK ADDRESS                : {network}\n")
-    file.write(f"SUBNET MASK                    : {subnetMask}\n")
-    file.write(f"BROADCAST ADDRESS              : {broadcast}\n")
 
-# Scan for live hosts
-nm.scan(hosts=network, arguments='-sn -PR')
+    # Scan for live hosts
+    nm.scan(hosts=network, arguments='-sn -PR')
 
-liveHosts = nm.all_hosts()
-count = 1
+    liveHosts = nm.all_hosts()
+    hostCount = 1
 
-for host in liveHosts:
-    print(f'Host {count}: {host}')
-    count+=1
+    file.write('+==============================+\n')
+    file.write('|   HOST     |     ADDRESS     |\n')
+    file.write('+==============================+\n')
+
+    for host in liveHosts:
+        file.write(f'  Host {hostCount:>5} : {host:<15}\n')
+        hostCount+=1
